@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Transaction, Chain, Stats, PaginatedResponse } from '../types/transaction';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_LIVE_TRANSACTIONS = 100;
+const BATCH_FLUSH_INTERVAL = 500; // Update UI max 2 times per second
 
 export function useTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -11,12 +12,37 @@ export function useTransactions() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Add a new transaction to the live list
+  // Buffer for batching incoming transactions
+  const txBufferRef = useRef<Transaction[]>([]);
+  const flushIntervalRef = useRef<number | null>(null);
+
+  // Add a new transaction to the buffer (will be flushed periodically)
   const addTransaction = useCallback((tx: Transaction) => {
-    setTransactions((prev) => {
-      const newTxs = [tx, ...prev.filter((t) => t.hash !== tx.hash)];
-      return newTxs.slice(0, MAX_LIVE_TRANSACTIONS);
-    });
+    txBufferRef.current.push(tx);
+  }, []);
+
+  // Flush buffered transactions to state periodically
+  useEffect(() => {
+    flushIntervalRef.current = window.setInterval(() => {
+      if (txBufferRef.current.length > 0) {
+        const bufferedTxs = [...txBufferRef.current];
+        txBufferRef.current = [];
+
+        setTransactions((prev) => {
+          // Dedupe and prepend new transactions
+          const existingHashes = new Set(prev.map(t => t.hash));
+          const newUnique = bufferedTxs.filter(t => !existingHashes.has(t.hash));
+          const combined = [...newUnique, ...prev];
+          return combined.slice(0, MAX_LIVE_TRANSACTIONS);
+        });
+      }
+    }, BATCH_FLUSH_INTERVAL);
+
+    return () => {
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
+      }
+    };
   }, []);
 
   // Fetch chains

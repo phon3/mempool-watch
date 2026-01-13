@@ -8,6 +8,7 @@ import { TransactionBroadcaster } from './websocket/server.js';
 import { createApiRouter } from './api/routes.js';
 import { loadProvidersFromEnv, ProviderManager } from './providers/manager.js';
 import prisma from './db/client.js';
+import { startPruning } from './db/pruning.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 
@@ -31,8 +32,8 @@ async function main() {
   if (chains.length === 0) {
     console.error(
       'No chains configured. Please set CHAIN_1_NAME, CHAIN_1_ID and either:\n' +
-        '  - CHAIN_1_WS_URL (manual configuration), or\n' +
-        '  - PROVIDER=alchemy and ALCHEMY_API_KEY (automatic configuration)'
+      '  - CHAIN_1_WS_URL (manual configuration), or\n' +
+      '  - PROVIDER=alchemy and ALCHEMY_API_KEY (automatic configuration)'
     );
     process.exit(1);
   }
@@ -120,6 +121,9 @@ async function main() {
 
   // Start watching mempool
   await watcher.start();
+
+  // Start database pruning scheduler
+  startPruning();
 
   // Graceful shutdown
   const shutdown = async () => {
