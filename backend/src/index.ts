@@ -6,6 +6,7 @@ import { loadChainsFromEnv, validateChainConfig } from './config/chains.js';
 import { MempoolWatcher } from './mempool/watcher.js';
 import { TransactionBroadcaster } from './websocket/server.js';
 import { createApiRouter } from './api/routes.js';
+import { loadProvidersFromEnv, ProviderManager } from './providers/manager.js';
 import prisma from './db/client.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -13,12 +14,25 @@ const PORT = parseInt(process.env.PORT ?? '3001', 10);
 async function main() {
   console.log('Starting Mempool Watcher Backend...');
 
+  // Load provider configurations (if any)
+  const providerConfigs = loadProvidersFromEnv();
+  let providerManager: ProviderManager | undefined;
+
+  if (providerConfigs.length > 0) {
+    providerManager = new ProviderManager(providerConfigs);
+    console.log(
+      `Loaded ${providerConfigs.length} provider(s): ${providerManager.getConfiguredProviders().join(', ')}`
+    );
+  }
+
   // Load and validate chain configurations
-  const chains = loadChainsFromEnv();
+  const chains = loadChainsFromEnv(providerManager);
 
   if (chains.length === 0) {
     console.error(
-      'No chains configured. Please set CHAIN_1_NAME, CHAIN_1_ID, CHAIN_1_WS_URL environment variables.'
+      'No chains configured. Please set CHAIN_1_NAME, CHAIN_1_ID and either:\n' +
+        '  - CHAIN_1_WS_URL (manual configuration), or\n' +
+        '  - PROVIDER=alchemy and ALCHEMY_API_KEY (automatic configuration)'
     );
     process.exit(1);
   }
