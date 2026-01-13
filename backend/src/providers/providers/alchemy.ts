@@ -16,6 +16,7 @@ const ALCHEMY_NETWORKS: Record<number, string> = {
   8453: 'base-mainnet', // Base
   84531: 'base-goerli', // Base Goerli
   84532: 'base-sepolia', // Base Sepolia
+  143: 'monad-mainnet', // Monad Mainnet
 };
 
 export const AlchemyProvider: RpcProvider = {
