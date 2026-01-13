@@ -24,146 +24,188 @@ export class MempoolWatcher extends EventEmitter {
   constructor(private chains: ChainConfig[]) {
     super();
   }
-// ... (skip unchanged) ...
+
+  /**
+   * Start watching all configured chains
+   */
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      console.warn('Watcher is already running');
+      return;
+    }
+
+    this.isRunning = true;
+    console.log(`Starting mempool watcher for ${this.chains.length} chain(s)`);
+
+    for (const chain of this.chains) {
+      await this.watchChain(chain);
+    }
+  }
+
+  /**
+   * Stop watching all chains
+   */
+  async stop(): Promise<void> {
+    this.isRunning = false;
+
+    // Clear all reconnect timers
+    for (const timer of this.reconnectTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.reconnectTimers.clear();
+
+    // Unwatch all chains
+    for (const [chainId, unwatch] of this.unwatchFns) {
+      console.log(`Stopping watcher for chain ${chainId}`);
+      unwatch();
+    }
+    this.unwatchFns.clear();
+    this.clients.clear();
+  }
+
+  /**
+   * Watch a single chain's mempool
+   */
+  private async watchChain(chainConfig: ChainConfig): Promise<void> {
     const { id: chainId, name, wsUrl } = chainConfig;
 
-try {
-  console.log(`Connecting to ${name} (${chainId}) via WebSocket...`);
+    try {
+      console.log(`Connecting to ${name} (${chainId}) via WebSocket...`);
 
-  // Get viem chain config or create a minimal one
-  // Cast to strict Chain type to satisfy createPublicClient
-  const viemChain: Chain = CHAIN_MAP[chainId] ?? {
-    id: chainId,
-    name,
-    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-    rpcUrls: { default: { http: [] } },
-  } as unknown as Chain;
+      // Get viem chain config or create a minimal one
+      // Cast to strict Chain type to satisfy createPublicClient
+      const viemChain: Chain = CHAIN_MAP[chainId] ?? {
+        id: chainId,
+        name,
+        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        rpcUrls: { default: { http: [] } },
+      } as unknown as Chain;
 
-  const transport = webSocket(wsUrl, {
-    reconnect: true,
-    retryCount: 5,
-    retryDelay: ({ count }: { count: number }) => Math.min(1000 * Math.pow(2, count), 30000),
-  });
+      const transport = webSocket(wsUrl, {
+        reconnect: true,
+        retryCount: 5,
+        retryDelay: 5000,
+      });
 
-  const client = createPublicClient({
-    chain: viemChain,
-    transport,
-  });
+      const client = createPublicClient({
+        chain: viemChain,
+        transport,
+      });
 
-  this.clients.set(chainId, client);
+      this.clients.set(chainId, client);
 
-  // Subscribe to pending transactions
-  const unwatch = client.watchPendingTransactions({
-    onTransactions: async (hashes) => {
-      for (const hash of hashes) {
-        try {
-          const tx = await client.getTransaction({ hash });
-          if (tx) {
-            const pendingTx = viemTxToPendingTransaction(tx, chainId);
-            await this.handleTransaction(pendingTx);
+      // Subscribe to pending transactions
+      const unwatch = client.watchPendingTransactions({
+        onTransactions: async (hashes) => {
+          for (const hash of hashes) {
+            try {
+              const tx = await client.getTransaction({ hash });
+              if (tx) {
+                const pendingTx = viemTxToPendingTransaction(tx, chainId);
+                await this.handleTransaction(pendingTx);
+              }
+            } catch (error) {
+              // Transaction might have been confirmed/dropped before we could fetch it
+              // This is expected behavior, don't log as error
+              if (!(error instanceof Error && error.message.includes('not found'))) {
+                console.error(`Error fetching tx ${hash} on ${name}:`, error);
+              }
+            }
           }
-        } catch (error) {
-          // Transaction might have been confirmed/dropped before we could fetch it
-          // This is expected behavior, don't log as error
-          if (!(error instanceof Error && error.message.includes('not found'))) {
-            console.error(`Error fetching tx ${hash} on ${name}:`, error);
-          }
-        }
-      }
-    },
-    onError: (error) => {
-      console.error(`WebSocket error on ${name}:`, error);
-      this.emit('error', error, chainId);
+        },
+        onError: (error) => {
+          console.error(`WebSocket error on ${name}:`, error);
+          this.emit('error', error, chainId);
+          this.scheduleReconnect(chainConfig);
+        },
+      });
+
+      this.unwatchFns.set(chainId, unwatch);
+      this.emit('connected', chainId);
+      console.log(`Watching mempool on ${name} (${chainId})...`);
+    } catch (error) {
+      console.error(`Failed to connect to ${name}:`, error);
+      this.emit('error', error as Error, chainId);
       this.scheduleReconnect(chainConfig);
-    },
-  });
-
-  this.unwatchFns.set(chainId, unwatch);
-  this.emit('connected', chainId);
-  console.log(`Watching mempool on ${name} (${chainId})...`);
-} catch (error) {
-  console.error(`Failed to connect to ${name}:`, error);
-  this.emit('error', error as Error, chainId);
-  this.scheduleReconnect(chainConfig);
-}
+    }
   }
 
   /**
    * Handle an incoming transaction
    */
-  private async handleTransaction(tx: PendingTransaction): Promise < void> {
-  try {
-    // Save to database
-    await prisma.transaction.upsert({
-      where: { hash: tx.hash },
-      update: { status: tx.status },
-      create: {
-        hash: tx.hash,
-        chainId: tx.chainId,
-        from: tx.from,
-        to: tx.to,
-        value: tx.value,
-        gasPrice: tx.gasPrice,
-        gasLimit: tx.gasLimit,
-        maxFeePerGas: tx.maxFeePerGas,
-        maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
-        input: tx.input,
-        nonce: tx.nonce,
-        type: tx.type,
-        timestamp: tx.timestamp,
-        status: tx.status,
-      },
-    });
+  private async handleTransaction(tx: PendingTransaction): Promise<void> {
+    try {
+      // Save to database
+      await prisma.transaction.upsert({
+        where: { hash: tx.hash },
+        update: { status: tx.status },
+        create: {
+          hash: tx.hash,
+          chainId: tx.chainId,
+          from: tx.from,
+          to: tx.to,
+          value: tx.value,
+          gasPrice: tx.gasPrice,
+          gasLimit: tx.gasLimit,
+          maxFeePerGas: tx.maxFeePerGas,
+          maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+          input: tx.input,
+          nonce: tx.nonce,
+          type: tx.type,
+          timestamp: tx.timestamp,
+          status: tx.status,
+        },
+      });
 
-    // Emit for real-time updates
-    this.emit('transaction', tx);
-  } catch(error) {
-    // Ignore duplicate key errors (race condition with multiple nodes)
-    if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
-      console.error('Error saving transaction:', error);
+      // Emit for real-time updates
+      this.emit('transaction', tx);
+    } catch (error) {
+      // Ignore duplicate key errors (race condition with multiple nodes)
+      if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
+        console.error('Error saving transaction:', error);
+      }
     }
   }
-}
 
   /**
    * Schedule a reconnection attempt
    */
   private scheduleReconnect(chainConfig: ChainConfig): void {
-  if(!this.isRunning) return;
+    if (!this.isRunning) return;
 
-  const { id: chainId, name } = chainConfig;
+    const { id: chainId, name } = chainConfig;
 
-  // Clear existing timer
-  const existingTimer = this.reconnectTimers.get(chainId);
-  if(existingTimer) {
-    clearTimeout(existingTimer);
-  }
+    // Clear existing timer
+    const existingTimer = this.reconnectTimers.get(chainId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
 
     // Clean up existing connection
     const existingUnwatch = this.unwatchFns.get(chainId);
-  if(existingUnwatch) {
-    existingUnwatch();
-    this.unwatchFns.delete(chainId);
-  }
+    if (existingUnwatch) {
+      existingUnwatch();
+      this.unwatchFns.delete(chainId);
+    }
     this.clients.delete(chainId);
-  this.emit('disconnected', chainId);
+    this.emit('disconnected', chainId);
 
-  // Schedule reconnection
-  const timer = setTimeout(async () => {
-    console.log(`Reconnecting to ${name}...`);
-    this.reconnectTimers.delete(chainId);
-    await this.watchChain(chainConfig);
-  }, 5000);
+    // Schedule reconnection
+    const timer = setTimeout(async () => {
+      console.log(`Reconnecting to ${name}...`);
+      this.reconnectTimers.delete(chainId);
+      await this.watchChain(chainConfig);
+    }, 5000);
 
-  this.reconnectTimers.set(chainId, timer);
-}
+    this.reconnectTimers.set(chainId, timer);
+  }
 
-/**
- * Get connected chain IDs
- */
-getConnectedChains(): number[] {
-  return Array.from(this.clients.keys());
-}
+  /**
+   * Get connected chain IDs
+   */
+  getConnectedChains(): number[] {
+    return Array.from(this.clients.keys());
+  }
 }
 
 // Type the EventEmitter

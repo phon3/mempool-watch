@@ -71,7 +71,7 @@ export function createApiRouter(chains: ChainConfig[]): Router {
       const { hash } = req.params;
 
       const transaction = await prisma.transaction.findUnique({
-        where: { hash },
+        where: { hash: hash as string },
       });
 
       if (!transaction) {
