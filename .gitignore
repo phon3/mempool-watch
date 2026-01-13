@@ -85,3 +85,4 @@ ENV/
 # Antigravity brain artifacts (keep only in local development)
 .gemini/
 CLAUDE.md
+.agent/
