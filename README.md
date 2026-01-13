@@ -8,7 +8,7 @@
 
 > Real-time mempool monitoring for any EVM-compatible blockchain with a React frontend and Python analysis tools.
 
-## ✨ Features
+##  Features
 
 - 🔄 **Real-time monitoring** - WebSocket-based live transaction feed using viem
 - ⛓️ **Multi-chain support** - Ethereum, Base, Arbitrum, Optimism, Polygon, and any EVM chain
@@ -262,7 +262,7 @@ Add the following secrets to your GitHub repository (Settings > Secrets and vari
 
 | Secret Name | Description |
 |---|---|
-| `VPS_HOST` | IP address of your VPS (e.g., `167.71.153.59`) |
+| `VPS_HOST` | IP address of your VPS (e.g., `168.71.153.54`) |
 | `VPS_USER` | SSH username (e.g., `root`) |
 | `SSH_PRIVATE_KEY` | Private SSH key for access |
 | `ENV_BACKEND` | Content of your backend `.env` file |
@@ -290,13 +290,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Vitest](https://vitest.dev/) - Blazing fast unit test framework  
 - Research inspiration from [BlockJayn](https://github.com/BlockJayn/evm-mempool-scanner) and [Gasflow](https://github.com/duoxehyon/gasflow-server)
 
-## 📞 Support
-
-- 📖 Documentation: [docs/](docs/)
-- 🐛 Issues: [GitHub Issues](../../issues)
-- 💬 Discussions: [GitHub Discussions](../../discussions)
-
----
 
 Made with ❤️ for the Ethereum ecosystem
 
