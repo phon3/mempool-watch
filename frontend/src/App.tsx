@@ -13,12 +13,24 @@ function App() {
   );
   const [isLive, setIsLive] = useState(true);
 
-  const { transactions, chains, stats, isLoading, addTransaction, fetchTransactions, fetchStats } =
-    useTransactions();
+  const {
+    transactions,
+    chains,
+    stats,
+    isLoading,
+    addTransaction,
+    fetchTransactions,
+    fetchStats,
+    clearTransactions
+  } = useTransactions();
 
   const handleTransaction = useCallback(
     (tx: Parameters<typeof addTransaction>[0]) => {
-      if (isLive && (selectedChainId === null || tx.chainId === selectedChainId)) {
+      // If live mode is off (e.g. paused/searching), don't add new transactions
+      if (!isLive) return;
+
+      // Add to list if we are viewing all chains (null) OR if tx matches selected chain
+      if (selectedChainId === null || tx.chainId === selectedChainId) {
         addTransaction(tx);
       }
     },
@@ -38,14 +50,20 @@ function App() {
     onChainStatus: handleChainStatus,
   });
 
-  const handleChainSelect = (chainId: number | null) => {
+  const handleChainSelect = async (chainId: number | null) => {
     setSelectedChainId(chainId);
+    clearTransactions(); // Clear current list immediately
+
     if (chainId) {
       subscribeToChains([chainId]);
       fetchStats(chainId);
+      // Fetch recent history for specific chain to populate list immediately
+      await fetchTransactions({ chainId, limit: 50 });
     } else {
-      subscribeToChains([]);
+      subscribeToChains([]); // Subscribe to all
       fetchStats();
+      // Fetch recent history for all chains
+      await fetchTransactions({ limit: 50 });
     }
   };
 
@@ -85,9 +103,8 @@ function App() {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    isConnected ? 'bg-green-400 live-indicator' : 'bg-red-400'
-                  }`}
+                  className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-400 live-indicator' : 'bg-red-400'
+                    }`}
                 />
                 <span className="text-sm text-slate-400">
                   {isConnected ? 'Connected' : 'Disconnected'}

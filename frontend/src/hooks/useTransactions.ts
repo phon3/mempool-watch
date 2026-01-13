@@ -21,6 +21,11 @@ export function useTransactions() {
     txBufferRef.current.push(tx);
   }, []);
 
+  const clearTransactions = useCallback(() => {
+    setTransactions([]);
+    txBufferRef.current = [];
+  }, []);
+
   // Flush buffered transactions to state periodically
   useEffect(() => {
     flushIntervalRef.current = window.setInterval(() => {
@@ -144,5 +149,6 @@ export function useTransactions() {
     fetchTransaction,
     fetchStats,
     fetchChains,
+    clearTransactions,
   };
 }
