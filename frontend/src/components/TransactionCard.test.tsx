@@ -101,7 +101,7 @@ describe('TransactionCard', () => {
     expect(parent).toBeTruthy();
   });
 
-  it('should create clickable Etherscan link', () => {
+  it('should create clickable Etherscan link for Mainnet', () => {
     render(<TransactionCard transaction={mockTransaction} />);
 
     // Find the link by href attribute
@@ -109,6 +109,18 @@ describe('TransactionCard', () => {
     const etherscanLink = Array.from(links).find((link) => link.href.includes('etherscan.io/tx/'));
     expect(etherscanLink).toBeTruthy();
     expect(etherscanLink?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('should create clickable Basescan link for Base chain', () => {
+    const baseTx = {
+      ...mockTransaction,
+      chainId: 8453,
+    };
+    render(<TransactionCard transaction={baseTx} />);
+
+    const links = document.querySelectorAll('a');
+    const basescanLink = Array.from(links).find((link) => link.href.includes('basescan.org/tx/'));
+    expect(basescanLink).toBeTruthy();
   });
 
   it('should handle zero value transactions', () => {

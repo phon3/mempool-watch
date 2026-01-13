@@ -33,6 +33,23 @@ export function TransactionCard({ transaction: tx, chainName }: TransactionCardP
 
   const isContractInteraction = tx.input && tx.input !== '0x' && tx.input.length > 2;
 
+  const getExplorerUrl = (chainId: number, hash: string) => {
+    switch (chainId) {
+      case 8453: // Base
+        return `https://basescan.org/tx/${hash}`;
+      case 42161: // Arbitrum
+        return `https://arbiscan.io/tx/${hash}`;
+      case 143: // Monad
+        return `https://monadscan.com/tx/${hash}`;
+      case 137: // Polygon
+        return `https://polygonscan.com/tx/${hash}`;
+      case 11155111: // Sepolia
+        return `https://sepolia.etherscan.io/tx/${hash}`;
+      default: // ETH Mainnet or others
+        return `https://etherscan.io/tx/${hash}`;
+    }
+  };
+
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:border-slate-600 transition-colors">
       <div className="flex items-center justify-between mb-3">
@@ -60,7 +77,7 @@ export function TransactionCard({ transaction: tx, chainName }: TransactionCardP
         <div className="flex items-center gap-2">
           <span className="text-slate-500 w-12">Hash</span>
           <a
-            href={`https://etherscan.io/tx/${tx.hash}`}
+            href={getExplorerUrl(tx.chainId, tx.hash)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-400 hover:text-blue-300 font-mono"
