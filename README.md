@@ -36,9 +36,9 @@
                     │                          │                          │
                     ▼                          ▼                          ▼
            ┌──────────────┐           ┌──────────────┐           ┌──────────────┐
-           │ React Frontend│           │ REST API     │           │ Python       │
-           │ (real-time)   │◄─────────►│ (Express)    │           │ Analysis     │
-           └──────────────┘  WebSocket └──────────────┘           └──────────────┘
+           │React Frontend│           │ REST API     │           │ Python       │
+           │(real-time)   │◄─────────►│ (Express)    │           │ Analysis     │
+           └──────────────┘  WebSocket└──────────────┘           └──────────────┘
 ```
 
 ## Prerequisites
