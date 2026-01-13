@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: '20.x'
           cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install backend dependencies
         working-directory: ./backend
@@ -48,6 +49,7 @@ jobs:
         with:
           node-version: '20.x'
           cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Lint backend
         working-directory: ./backend
