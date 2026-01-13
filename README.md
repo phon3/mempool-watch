@@ -91,23 +91,29 @@ Open http://localhost:5173
 
 ### Chain Configuration
 
-Add chains via environment variables in `backend/.env`:
+Configure your provider in `backend/.env`.
+
+**Recommended: Use a Provider**
+Simplifies setup by requiring only one API key for multiple chains.
 
 ```bash
-# Ethereum Mainnet
+PROVIDER=alchemy
+ALCHEMY_API_KEY=your_alchemy_key
+
+# Chains configuration (URLs auto-generated)
 CHAIN_1_NAME=ethereum
 CHAIN_1_ID=1
-CHAIN_1_WS_URL=wss://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
-
-# Base
 CHAIN_2_NAME=base
 CHAIN_2_ID=8453
-CHAIN_2_WS_URL=wss://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+```
 
-# Arbitrum
-CHAIN_3_NAME=arbitrum
-CHAIN_3_ID=42161
-CHAIN_3_WS_URL=wss://arb-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+**Legacy: Manual Configuration**
+You can still specify WebSocket URLs manually if needed.
+
+```bash
+CHAIN_1_NAME=custom
+CHAIN_1_ID=123
+CHAIN_1_WS_URL=wss://...
 ```
 
 ### Supported Chain IDs
@@ -239,6 +245,39 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Code style guidelines
 - Testing requirements
 - Pull request process
+
+## 🚀 Deployment
+
+The project is configured for automated deployment to a VPS using GitHub Actions.
+
+### Prerequisites
+
+- A DigitalOcean Droplet (or similar VPS)
+- SSH access to the VPS
+- Docker & Docker Compose installed on VPS
+
+### Setup Secrets
+
+Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
+
+| Secret Name | Description |
+|---|---|
+| `VPS_HOST` | IP address of your VPS (e.g., `167.71.153.59`) |
+| `VPS_USER` | SSH username (e.g., `root`) |
+| `SSH_PRIVATE_KEY` | Private SSH key for access |
+| `ENV_BACKEND` | Content of your backend `.env` file |
+
+### Configuration
+
+The deployments use the following ports:
+- **Backend**: Port `3002` (Mapped to container 3001)
+- **Frontend**: Port `3003` (Mapped to container 80)
+
+Ensure these ports are open on your firewall:
+```bash
+ufw allow 3002/tcp
+ufw allow 3003/tcp
+```
 
 ## 📄 License
 

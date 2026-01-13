@@ -4,19 +4,45 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: mempool-postgres
+    restart: always
     environment:
       POSTGRES_USER: mempool
       POSTGRES_PASSWORD: mempool_password
       POSTGRES_DB: mempool
-    ports:
-      - "5432:5432"
     volumes:
       - mempool_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mempool -d mempool"]
+      test: [ "CMD-SHELL", "pg_isready -U mempool -d mempool" ]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: mempool-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://mempool:mempool_password@postgres:5432/mempool
+      - PORT=3002
+      # Initial retry for DB connection is handled or restart policy covers it
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/.env:/app/.env
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: mempool-frontend
+    restart: always
+    ports:
+      - "3003:80"
+    depends_on:
+      - backend
 
 volumes:
   mempool_data:

@@ -1,0 +1,50 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Navigate to repository directory
+            DEPLOY_DIR="/opt/repos/mempool-watch"
+            
+            # Ensure directory exists (first run)
+            if [ ! -d "$DEPLOY_DIR" ]; then
+              mkdir -p /opt/repos
+              cd /opt/repos
+              git clone https://github.com/phon3/mempool-watch.git
+            fi
+            
+            cd $DEPLOY_DIR
+            
+            # Pull latest changes
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Write environment file from secrets
+            echo "${{ secrets.ENV_BACKEND }}" > backend/.env
+            
+            # Build and deploy
+            if docker compose version &> /dev/null; then
+              COMPOSE_CMD="docker compose"
+            else
+              COMPOSE_CMD="docker-compose"
+            fi
+            
+            $COMPOSE_CMD down
+            $COMPOSE_CMD up -d --build
+            $COMPOSE_CMD ps
+            
+            # Clean up
+            docker system prune -f
