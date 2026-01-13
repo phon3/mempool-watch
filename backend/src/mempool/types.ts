@@ -52,3 +52,28 @@ export function viemTxToPendingTransaction(
     status: 'pending',
   };
 }
+
+export function rawTxToPendingTransaction(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  chainId: number
+): PendingTransaction {
+  return {
+    hash: tx.hash,
+    chainId,
+    from: tx.from,
+    to: tx.to ?? null,
+    // Convert hex to decimal string
+    value: BigInt(tx.value || '0x0').toString(),
+    gasPrice: BigInt(tx.gasPrice || tx.maxFeePerGas || '0x0').toString(),
+    gasLimit: BigInt(tx.gas || '0x0').toString(),
+    maxFeePerGas: tx.maxFeePerGas ? BigInt(tx.maxFeePerGas).toString() : undefined,
+    maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas).toString() : undefined,
+    input: tx.input,
+    // Convert hex nonce to number
+    nonce: parseInt(tx.nonce || '0x0', 16),
+    type: tx.type ? parseInt(tx.type, 16) : 0,
+    timestamp: new Date(),
+    status: 'pending',
+  };
+}
