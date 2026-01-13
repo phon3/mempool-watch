@@ -1,29 +1,11 @@
-import { createPublicClient, type Chain } from 'viem';
-import { mainnet, base, arbitrum, optimism, polygon } from 'viem/chains';
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import type { ChainConfig, PendingTransaction, WatcherEvents } from './types.js';
-import { viemTxToPendingTransaction, rawTxToPendingTransaction } from './types.js';
+import { rawTxToPendingTransaction } from './types.js';
 import prisma from '../db/client.js';
 
-// Map of chain IDs to viem chain objects for common chains
-const CHAIN_MAP: Record<number, Chain> = {
-  1: mainnet,
-  8453: base,
-  42161: arbitrum,
-  10: optimism,
-  137: polygon as Chain,
-};
-
-// Interface for Alchemy subscription message
-interface AlchemySubscriptionMessage {
-  jsonrpc: string;
-  method: string;
-  params: {
-    result: any; // The transaction object
-    subscription: string;
-  };
-}
+// Chains that support alchemy_pendingTransactions (full tx objects)
+const ALCHEMY_PENDING_TX_SUPPORTED = [1, 11155111]; // ETH Mainnet, Sepolia
 
 export class MempoolWatcher extends EventEmitter {
   private clients: Map<number, WebSocket> = new Map();
@@ -52,13 +34,11 @@ export class MempoolWatcher extends EventEmitter {
   async stop(): Promise<void> {
     this.isRunning = false;
 
-    // Clear all reconnect timers
     for (const timer of this.reconnectTimers.values()) {
       clearTimeout(timer);
     }
     this.reconnectTimers.clear();
 
-    // Unwatch all chains
     for (const [chainId, unwatch] of this.unwatchFns) {
       console.log(`Stopping watcher for chain ${chainId}`);
       unwatch();
@@ -73,25 +53,11 @@ export class MempoolWatcher extends EventEmitter {
     try {
       console.log(`Connecting to ${name} (${chainId}) via WebSocket...`);
 
-      // Check if this is an Alchemy URL to use their optimized subscription
       const isAlchemy = wsUrl.includes('alchemy.com');
+      // Use alchemy_pendingTransactions only for ETH mainnet/sepolia
+      const useAlchemyPending = isAlchemy && ALCHEMY_PENDING_TX_SUPPORTED.includes(chainId);
 
-      if (isAlchemy) {
-        this.watchChainRaw(chainConfig, true);
-      } else {
-        // Fallback or Standard Viem implementation could go here, 
-        // but for consistency we'll implement a robust raw WS standard client 
-        // or just use the Alchemy one if we assume Alchemy.
-        // Given the requirement is to fix L2s and we effectively only support Alchemy
-        // via .env right now, let's implement the generic case cleanly via 'eth_subscribe'.
-
-        // Actually, let's stick to the previous hybrid if needed, or just use raw WS for everything
-        // since 'newPendingTransactions' gives hashes everywhere else.
-        // But to keep it simple and safe, I'll use the raw WS for ALL, but adapting the method.
-
-        this.watchChainRaw(chainConfig, isAlchemy);
-      }
-
+      this.watchChainRaw(chainConfig, useAlchemyPending);
     } catch (error) {
       console.error(`Failed to connect to ${name}:`, error);
       this.emit('error', error as Error, chainId);
@@ -99,11 +65,8 @@ export class MempoolWatcher extends EventEmitter {
     }
   }
 
-  /**
-   * Watch chain using raw WebSocket to support custom subscriptions and full objects
-   */
-  private watchChainRaw(chainConfig: ChainConfig, isAlchemy: boolean) {
-    const { id: chainId, name, wsUrl } = chainConfig;
+  private watchChainRaw(chainConfig: ChainConfig, useAlchemyPending: boolean) {
+    const { id: chainId, name, wsUrl, rpcUrl } = chainConfig;
 
     const ws = new WebSocket(wsUrl);
     this.clients.set(chainId, ws);
@@ -119,13 +82,17 @@ export class MempoolWatcher extends EventEmitter {
       console.log(`Connected to ${name} (${chainId})`);
       this.emit('connected', chainId);
 
-      const method = isAlchemy ? 'eth_subscribe' : 'eth_subscribe';
-      const params = isAlchemy ? ['alchemy_pendingTransactions'] : ['newPendingTransactions'];
+      // Use appropriate subscription method
+      const params = useAlchemyPending
+        ? ['alchemy_pendingTransactions', { hashesOnly: false }]
+        : ['newPendingTransactions'];
+
+      console.log(`[${name}] Using subscription: ${params[0]}`);
 
       const subscribeRequest = {
         jsonrpc: '2.0',
         id: 1,
-        method,
+        method: 'eth_subscribe',
         params
       };
 
@@ -136,9 +103,6 @@ export class MempoolWatcher extends EventEmitter {
       try {
         const message = JSON.parse(data.toString());
 
-        // DEBUG: Log all incoming messages
-        console.log(`[${name}] Raw WS message:`, JSON.stringify(message).slice(0, 300));
-
         // Handle Subscription ID response
         if (message.id === 1 && message.result) {
           subscriptionId = message.result;
@@ -146,22 +110,23 @@ export class MempoolWatcher extends EventEmitter {
           return;
         }
 
+        // Handle error response
+        if (message.error) {
+          console.error(`[${name}] Subscription error:`, message.error);
+          return;
+        }
+
         // Handle Notification
         if (message.method === 'eth_subscription' && message.params) {
           const result = message.params.result;
 
-          console.log(`[${name}] Notification received. Type: ${typeof result}, isObject: ${typeof result === 'object'}`);
-
-          if (isAlchemy && typeof result === 'object' && result !== null && result.hash) {
-            // Alchemy returns full transaction object
+          if (useAlchemyPending && typeof result === 'object' && result !== null && result.hash) {
+            // Full transaction object from alchemy_pendingTransactions
             const pendingTx = rawTxToPendingTransaction(result, chainId);
-            console.log(`[${name}] Processing tx: ${pendingTx.hash}`);
             await this.handleTransaction(pendingTx);
           } else if (typeof result === 'string') {
-            // Standard returns HASH - log it
-            console.log(`[${name}] Received hash only: ${result}`);
-          } else {
-            console.log(`[${name}] Unknown result format:`, result);
+            // Hash only from newPendingTransactions - fetch full tx
+            await this.fetchAndHandleTransaction(result, chainId, name, wsUrl);
           }
         }
       } catch (error) {
@@ -180,16 +145,49 @@ export class MempoolWatcher extends EventEmitter {
       this.scheduleReconnect(chainConfig);
     });
 
-    // Store cleanup
     this.unwatchFns.set(chainId, () => {
       ws.close();
       clearInterval(pingInterval);
     });
   }
 
+  /**
+   * Fetch full transaction by hash via JSON-RPC
+   */
+  private async fetchAndHandleTransaction(hash: string, chainId: number, name: string, wsUrl: string): Promise<void> {
+    try {
+      // Convert WS URL to HTTP URL for RPC call
+      const httpUrl = wsUrl.replace('wss://', 'https://').replace('/v2/', '/v2/');
+
+      const response = await fetch(httpUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_getTransactionByHash',
+          params: [hash]
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.result) {
+        const pendingTx = rawTxToPendingTransaction(data.result, chainId);
+        await this.handleTransaction(pendingTx);
+      }
+    } catch (error) {
+      // Transaction might be mined/dropped before we could fetch it - expected
+      // Only log if it's not a "not found" type error
+      const errorMsg = (error as Error).message || '';
+      if (!errorMsg.includes('not found')) {
+        console.warn(`[${name}] Failed to fetch tx ${hash.slice(0, 10)}...:`, errorMsg);
+      }
+    }
+  }
+
   private async handleTransaction(tx: PendingTransaction): Promise<void> {
     try {
-      // Save to database
       await prisma.transaction.upsert({
         where: { hash: tx.hash },
         update: { status: tx.status },
@@ -211,7 +209,6 @@ export class MempoolWatcher extends EventEmitter {
         },
       });
 
-      // Emit for real-time updates
       this.emit('transaction', tx);
     } catch (error) {
       if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
@@ -250,4 +247,9 @@ export class MempoolWatcher extends EventEmitter {
   getConnectedChains(): number[] {
     return Array.from(this.clients.keys());
   }
+}
+
+export interface MempoolWatcher {
+  on<K extends keyof WatcherEvents>(event: K, listener: WatcherEvents[K]): this;
+  emit<K extends keyof WatcherEvents>(event: K, ...args: Parameters<WatcherEvents[K]>): boolean;
 }
