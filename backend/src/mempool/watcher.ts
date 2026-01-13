@@ -170,7 +170,7 @@ export class MempoolWatcher extends EventEmitter {
         })
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as { result?: unknown; error?: unknown };
 
       if (data.result) {
         const pendingTx = rawTxToPendingTransaction(data.result, chainId);
