@@ -18,6 +18,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
+  // Use refs for callbacks to avoid re-connecting when they change
+  const onTransactionRef = useRef(onTransaction);
+  const onChainStatusRef = useRef(onChainStatus);
+
+  useEffect(() => {
+    onTransactionRef.current = onTransaction;
+  }, [onTransaction]);
+
+  useEffect(() => {
+    onChainStatusRef.current = onChainStatus;
+  }, [onChainStatus]);
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
@@ -38,13 +50,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
         switch (message.type) {
           case 'transaction':
-            if (message.data && onTransaction) {
-              onTransaction(message.data);
+            if (message.data && onTransactionRef.current) {
+              onTransactionRef.current(message.data);
             }
             break;
           case 'chainStatus':
-            if (message.chainId !== undefined && message.status && onChainStatus) {
-              onChainStatus(message.chainId, message.status);
+            if (message.chainId !== undefined && message.status && onChainStatusRef.current) {
+              onChainStatusRef.current(message.chainId, message.status);
             }
             break;
           case 'connected':
@@ -74,7 +86,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [autoReconnect, maxReconnectAttempts, onChainStatus, onTransaction, reconnectAttempts]);
+  }, [autoReconnect, maxReconnectAttempts, reconnectAttempts]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
