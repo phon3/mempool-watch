@@ -136,6 +136,9 @@ export class MempoolWatcher extends EventEmitter {
       try {
         const message = JSON.parse(data.toString());
 
+        // DEBUG: Log all incoming messages
+        console.log(`[${name}] Raw WS message:`, JSON.stringify(message).slice(0, 300));
+
         // Handle Subscription ID response
         if (message.id === 1 && message.result) {
           subscriptionId = message.result;
@@ -147,21 +150,18 @@ export class MempoolWatcher extends EventEmitter {
         if (message.method === 'eth_subscription' && message.params) {
           const result = message.params.result;
 
-          if (isAlchemy) {
+          console.log(`[${name}] Notification received. Type: ${typeof result}, isObject: ${typeof result === 'object'}`);
+
+          if (isAlchemy && typeof result === 'object' && result !== null && result.hash) {
             // Alchemy returns full transaction object
             const pendingTx = rawTxToPendingTransaction(result, chainId);
+            console.log(`[${name}] Processing tx: ${pendingTx.hash}`);
             await this.handleTransaction(pendingTx);
+          } else if (typeof result === 'string') {
+            // Standard returns HASH - log it
+            console.log(`[${name}] Received hash only: ${result}`);
           } else {
-            // Standard returns HASH
-            // We'd need to fetch it. Ideally we shouldn't hit this path if we filter users to Alchemy.
-            // But if we do:
-            if (typeof result === 'string') {
-              // It's a hash
-              // We need a provider to fetch it.
-              // We can create a temporary viem client or just fetch via RPC if we had Http.
-              // For now, let's log that we got a hash.
-              // Implementing fetch logic here is complex without the PublicClient.
-            }
+            console.log(`[${name}] Unknown result format:`, result);
           }
         }
       } catch (error) {
