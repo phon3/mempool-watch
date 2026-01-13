@@ -4,8 +4,16 @@ import type { ChainConfig, PendingTransaction, WatcherEvents } from './types.js'
 import { rawTxToPendingTransaction } from './types.js';
 import prisma from '../db/client.js';
 
-// Chains that support alchemy_pendingTransactions (full tx objects)
-const ALCHEMY_PENDING_TX_SUPPORTED = [1, 11155111]; // ETH Mainnet, Sepolia
+// Chain ID to subscription method mapping (based on testing results)
+const SUBSCRIPTION_CONFIG: Record<number, { method: string; needsFetch: boolean }> = {
+  1: { method: 'alchemy_pendingTransactions', needsFetch: false },    // ETH Mainnet
+  11155111: { method: 'alchemy_pendingTransactions', needsFetch: false }, // Sepolia
+  137: { method: 'alchemy_pendingTransactions', needsFetch: false },  // Polygon
+  8453: { method: 'alchemy_minedTransactions', needsFetch: false },   // Base
+  42161: { method: 'alchemy_minedTransactions', needsFetch: false },  // Arbitrum
+  10: { method: 'alchemy_minedTransactions', needsFetch: false },     // Optimism
+  143: { method: 'newHeads', needsFetch: true },                      // Monad
+};
 
 export class MempoolWatcher extends EventEmitter {
   private clients: Map<number, WebSocket> = new Map();
@@ -53,11 +61,8 @@ export class MempoolWatcher extends EventEmitter {
     try {
       console.log(`Connecting to ${name} (${chainId}) via WebSocket...`);
 
-      const isAlchemy = wsUrl.includes('alchemy.com');
-      // Use alchemy_pendingTransactions only for ETH mainnet/sepolia
-      const useAlchemyPending = isAlchemy && ALCHEMY_PENDING_TX_SUPPORTED.includes(chainId);
-
-      this.watchChainRaw(chainConfig, useAlchemyPending);
+      const subConfig = SUBSCRIPTION_CONFIG[chainId] || { method: 'newHeads', needsFetch: true };
+      this.watchChainRaw(chainConfig, subConfig);
     } catch (error) {
       console.error(`Failed to connect to ${name}:`, error);
       this.emit('error', error as Error, chainId);
@@ -65,8 +70,11 @@ export class MempoolWatcher extends EventEmitter {
     }
   }
 
-  private watchChainRaw(chainConfig: ChainConfig, useAlchemyPending: boolean) {
-    const { id: chainId, name, wsUrl, rpcUrl } = chainConfig;
+  private watchChainRaw(
+    chainConfig: ChainConfig,
+    subConfig: { method: string; needsFetch: boolean }
+  ) {
+    const { id: chainId, name, wsUrl } = chainConfig;
 
     const ws = new WebSocket(wsUrl);
     this.clients.set(chainId, ws);
@@ -82,21 +90,30 @@ export class MempoolWatcher extends EventEmitter {
       console.log(`Connected to ${name} (${chainId})`);
       this.emit('connected', chainId);
 
-      // Use appropriate subscription method
-      const params = useAlchemyPending
-        ? ['alchemy_pendingTransactions', { hashesOnly: false }]
-        : ['newPendingTransactions'];
+      // Build subscription params based on method
+      let params: unknown[];
+      switch (subConfig.method) {
+        case 'alchemy_pendingTransactions':
+          params = ['alchemy_pendingTransactions', { hashesOnly: false }];
+          break;
+        case 'alchemy_minedTransactions':
+          params = ['alchemy_minedTransactions', { hashesOnly: false }];
+          break;
+        case 'newHeads':
+          params = ['newHeads'];
+          break;
+        default:
+          params = [subConfig.method];
+      }
 
-      console.log(`[${name}] Using subscription: ${params[0]}`);
+      console.log(`[${name}] Using subscription: ${subConfig.method}`);
 
-      const subscribeRequest = {
+      ws.send(JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'eth_subscribe',
         params
-      };
-
-      ws.send(JSON.stringify(subscribeRequest));
+      }));
     });
 
     ws.on('message', async (data: Buffer) => {
@@ -106,7 +123,7 @@ export class MempoolWatcher extends EventEmitter {
         // Handle Subscription ID response
         if (message.id === 1 && message.result) {
           subscriptionId = message.result;
-          console.log(`Subscribed to ${name} mempool. ID: ${subscriptionId}`);
+          console.log(`Subscribed to ${name}. ID: ${subscriptionId}`);
           return;
         }
 
@@ -119,15 +136,7 @@ export class MempoolWatcher extends EventEmitter {
         // Handle Notification
         if (message.method === 'eth_subscription' && message.params) {
           const result = message.params.result;
-
-          if (useAlchemyPending && typeof result === 'object' && result !== null && result.hash) {
-            // Full transaction object from alchemy_pendingTransactions
-            const pendingTx = rawTxToPendingTransaction(result, chainId);
-            await this.handleTransaction(pendingTx);
-          } else if (typeof result === 'string') {
-            // Hash only from newPendingTransactions - fetch full tx
-            await this.fetchAndHandleTransaction(result, chainId, name, wsUrl);
-          }
+          await this.handleSubscriptionEvent(result, chainId, name, wsUrl, subConfig);
         }
       } catch (error) {
         console.error(`Error parsing WS message on ${name}:`, error);
@@ -151,13 +160,49 @@ export class MempoolWatcher extends EventEmitter {
     });
   }
 
-  /**
-   * Fetch full transaction by hash via JSON-RPC
-   */
-  private async fetchAndHandleTransaction(hash: string, chainId: number, name: string, wsUrl: string): Promise<void> {
+  private async handleSubscriptionEvent(
+    result: unknown,
+    chainId: number,
+    name: string,
+    wsUrl: string,
+    subConfig: { method: string; needsFetch: boolean }
+  ): Promise<void> {
     try {
-      // Convert WS URL to HTTP URL for RPC call
-      const httpUrl = wsUrl.replace('wss://', 'https://').replace('/v2/', '/v2/');
+      if (subConfig.method === 'alchemy_pendingTransactions') {
+        // Full pending transaction object
+        const txData = result as Record<string, unknown>;
+        if (txData && txData.hash) {
+          const pendingTx = rawTxToPendingTransaction(txData, chainId);
+          await this.handleTransaction(pendingTx);
+        }
+      } else if (subConfig.method === 'alchemy_minedTransactions') {
+        // Mined transaction format: { removed: boolean, transaction: {...} }
+        const minedData = result as { removed?: boolean; transaction?: Record<string, unknown> };
+        if (minedData.transaction && !minedData.removed) {
+          const pendingTx = rawTxToPendingTransaction(minedData.transaction, chainId);
+          pendingTx.status = 'confirmed'; // Mark as confirmed since it's mined
+          await this.handleTransaction(pendingTx);
+        }
+      } else if (subConfig.method === 'newHeads') {
+        // Block header - fetch all transactions in block
+        const blockData = result as { number?: string; hash?: string };
+        if (blockData.number && blockData.hash) {
+          await this.fetchBlockTransactions(blockData.number, chainId, name, wsUrl);
+        }
+      }
+    } catch (error) {
+      console.error(`[${name}] Error processing event:`, error);
+    }
+  }
+
+  private async fetchBlockTransactions(
+    blockNumber: string,
+    chainId: number,
+    name: string,
+    wsUrl: string
+  ): Promise<void> {
+    try {
+      const httpUrl = wsUrl.replace('wss://', 'https://');
 
       const response = await fetch(httpUrl, {
         method: 'POST',
@@ -165,24 +210,25 @@ export class MempoolWatcher extends EventEmitter {
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
-          method: 'eth_getTransactionByHash',
-          params: [hash]
+          method: 'eth_getBlockByNumber',
+          params: [blockNumber, true] // true = include full tx objects
         })
       });
 
-      const data = (await response.json()) as { result?: unknown; error?: unknown };
+      const data = (await response.json()) as { result?: { transactions?: unknown[] } };
 
-      if (data.result) {
-        const pendingTx = rawTxToPendingTransaction(data.result, chainId);
-        await this.handleTransaction(pendingTx);
+      if (data.result?.transactions) {
+        for (const tx of data.result.transactions) {
+          const txData = tx as Record<string, unknown>;
+          if (txData.hash) {
+            const pendingTx = rawTxToPendingTransaction(txData, chainId);
+            pendingTx.status = 'confirmed';
+            await this.handleTransaction(pendingTx);
+          }
+        }
       }
     } catch (error) {
-      // Transaction might be mined/dropped before we could fetch it - expected
-      // Only log if it's not a "not found" type error
-      const errorMsg = (error as Error).message || '';
-      if (!errorMsg.includes('not found')) {
-        console.warn(`[${name}] Failed to fetch tx ${hash.slice(0, 10)}...:`, errorMsg);
-      }
+      console.error(`[${name}] Failed to fetch block ${blockNumber}:`, error);
     }
   }
 
