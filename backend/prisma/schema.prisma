@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  hash      String   @unique
+  chainId   Int
+  from      String
+  to        String?
+  value     String   // BigInt stored as string
+  gasPrice  String   // BigInt stored as string
+  gasLimit  String   // BigInt stored as string (gas field from tx)
+  maxFeePerGas     String?  // EIP-1559
+  maxPriorityFeePerGas String?  // EIP-1559
+  input     String   @db.Text
+  nonce     Int
+  type      Int      @default(0)  // 0=legacy, 2=EIP-1559
+  timestamp DateTime @default(now())
+  status    String   @default("pending")  // pending, confirmed, dropped
+
+  @@index([chainId])
+  @@index([from])
+  @@index([to])
+  @@index([timestamp])
+  @@index([status])
+}
+
+model Chain {
+  id       Int     @id
+  name     String  @unique
+  wsUrl    String
+  rpcUrl   String?
+  active   Boolean @default(true)
+
+  @@index([active])
+}

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mempool-postgres
+    environment:
+      POSTGRES_USER: mempool
+      POSTGRES_PASSWORD: mempool_password
+      POSTGRES_DB: mempool
+    ports:
+      - "5432:5432"
+    volumes:
+      - mempool_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mempool -d mempool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mempool_data:
