@@ -114,9 +114,9 @@ async function main() {
   });
 
   // Start server
-  server.listen(PORT, () => {
-    console.log(`API server running on http://localhost:${PORT}`);
-    console.log(`WebSocket server running on ws://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`API server running on http://0.0.0.0:${PORT}`);
+    console.log(`WebSocket server running on ws://0.0.0.0:${PORT}`);
   });
 
   // Start watching mempool
