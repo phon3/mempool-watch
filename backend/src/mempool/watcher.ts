@@ -77,7 +77,7 @@ export class MempoolWatcher extends EventEmitter {
       const isAlchemy = wsUrl.includes('alchemy.com');
 
       if (isAlchemy) {
-        this.watchChainAlchemy(chainConfig);
+        this.watchChainRaw(chainConfig, true);
       } else {
         // Fallback or Standard Viem implementation could go here, 
         // but for consistency we'll implement a robust raw WS standard client 
