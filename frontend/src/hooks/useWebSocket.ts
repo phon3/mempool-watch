@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Transaction, WebSocketMessage } from '../types/transaction';
 
-const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3001`;
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3002`;
 
 interface UseWebSocketOptions {
   onTransaction?: (tx: Transaction) => void;
