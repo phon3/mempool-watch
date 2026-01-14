@@ -1,5 +1,5 @@
 import { TransactionCard } from './TransactionCard';
-import type { Transaction, Chain } from '../types/transaction';
+import type { Transaction, Chain } from '@/types/transaction';
 
 interface TransactionListProps {
   transactions: Transaction[];

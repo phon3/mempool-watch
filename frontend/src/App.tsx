@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
-import { useWebSocket } from './hooks/useWebSocket';
-import { useTransactions } from './hooks/useTransactions';
-import { TransactionList } from './components/TransactionList';
-import { ChainSelector } from './components/ChainSelector';
-import { StatsPanel } from './components/StatsPanel';
-import { FilterBar } from './components/FilterBar';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { useTransactions } from '@/hooks/useTransactions';
+import { TransactionList } from '@/components/TransactionList';
+import { ChainSelector } from '@/components/ChainSelector';
+import { StatsPanel } from '@/components/StatsPanel';
+import { FilterBar } from '@/components/FilterBar';
 
 function App() {
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
@@ -21,7 +21,9 @@ function App() {
     addTransaction,
     fetchTransactions,
     fetchStats,
-    clearTransactions
+    clearTransactions,
+    error,
+    hasMore,
   } = useTransactions();
 
   const handleTransaction = useCallback(
@@ -118,6 +120,13 @@ function App() {
             </div>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200">
+              {error}
+            </div>
+          )}
+
           {/* Chain Selector */}
           <ChainSelector
             chains={chains}
@@ -153,6 +162,22 @@ function App() {
             chains={chains}
             isLoading={isLoading}
           />
+
+          {hasMore && displayTransactions.length > 0 && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => fetchTransactions({
+                  chainId: selectedChainId ?? undefined,
+                  offset: transactions.length,
+                  limit: 50
+                }, true)}
+                disabled={isLoading}
+                className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? 'Loading...' : 'Load More'}
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>

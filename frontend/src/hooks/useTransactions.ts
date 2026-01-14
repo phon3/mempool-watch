@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Transaction, Chain, Stats, PaginatedResponse } from '../types/transaction';
+import type { Transaction, Chain, Stats, PaginatedResponse } from '@/types/transaction';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_LIVE_TRANSACTIONS = 100;
@@ -11,6 +11,7 @@ export function useTransactions() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   // Buffer for batching incoming transactions
   const txBufferRef = useRef<Transaction[]>([]);
@@ -84,7 +85,8 @@ export function useTransactions() {
         to?: string;
         limit?: number;
         offset?: number;
-      } = {}
+      } = {},
+      shouldAppend = false
     ) => {
       setIsLoading(true);
       setError(null);
@@ -100,7 +102,15 @@ export function useTransactions() {
         if (!response.ok) throw new Error('Failed to fetch transactions');
 
         const data: PaginatedResponse<Transaction> = await response.json();
-        setTransactions(data.transactions);
+
+        setTransactions(prev => {
+          if (shouldAppend) {
+            const existingHashes = new Set(prev.map(t => t.hash));
+            const newUnique = data.transactions.filter(t => !existingHashes.has(t.hash));
+            return [...prev, ...newUnique];
+          }
+          return data.transactions;
+        });
         return data;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -150,5 +160,6 @@ export function useTransactions() {
     fetchStats,
     fetchChains,
     clearTransactions,
+    hasMore,
   };
 }

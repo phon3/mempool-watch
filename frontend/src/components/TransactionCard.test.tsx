@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TransactionCard } from './TransactionCard';
-import type { Transaction } from '../types/transaction';
+import type { Transaction } from '@/types/transaction';
 
 describe('TransactionCard', () => {
   const mockTransaction: Transaction = {

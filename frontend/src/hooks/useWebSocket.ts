@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { Transaction, WebSocketMessage } from '../types/transaction';
+import type { Transaction, WebSocketMessage } from '@/types/transaction';
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3002`;
 
@@ -17,6 +17,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const pingIntervalRef = useRef<number | null>(null);
 
   // Use refs for callbacks to avoid re-connecting when they change
   const onTransactionRef = useRef(onTransaction);
@@ -42,6 +43,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       console.log('WebSocket connected');
       setIsConnected(true);
       setReconnectAttempts(0);
+
+      // Start heartbeat
+      if (pingIntervalRef.current) window.clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = window.setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 30000);
     };
 
     ws.onmessage = (event) => {
@@ -62,6 +71,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           case 'connected':
             console.log('Server acknowledged connection');
             break;
+          case 'pong':
+            // Heartbeat response received
+            break;
         }
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
@@ -72,6 +84,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       console.log('WebSocket disconnected');
       setIsConnected(false);
       wsRef.current = null;
+
+      if (pingIntervalRef.current) {
+        window.clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
 
       if (autoReconnect && reconnectAttempts < maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
@@ -92,6 +109,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
     if (wsRef.current) {
       wsRef.current.close();

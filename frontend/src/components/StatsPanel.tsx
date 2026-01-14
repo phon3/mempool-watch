@@ -1,4 +1,4 @@
-import type { Stats, Chain } from '../types/transaction';
+import type { Stats, Chain } from '@/types/transaction';
 
 interface StatsPanelProps {
   stats: Stats | null;

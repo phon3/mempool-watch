@@ -1,4 +1,4 @@
-import type { Chain } from '../types/transaction';
+import type { Chain } from '@/types/transaction';
 
 interface ChainSelectorProps {
   chains: Chain[];
@@ -17,11 +17,10 @@ export function ChainSelector({
     <div className="flex items-center gap-2 flex-wrap">
       <button
         onClick={() => onSelect(null)}
-        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-          selectedChainId === null
+        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedChainId === null
             ? 'bg-blue-500 text-white'
             : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-        }`}
+          }`}
       >
         All Chains
       </button>
@@ -34,16 +33,14 @@ export function ChainSelector({
           <button
             key={chain.id}
             onClick={() => onSelect(chain.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              selectedChainId === chain.id
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${selectedChainId === chain.id
                 ? 'bg-blue-500 text-white'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
+              }`}
           >
             <span
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-green-400 live-indicator' : 'bg-red-400'
-              }`}
+              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 live-indicator' : 'bg-red-400'
+                }`}
             />
             {chain.name}
           </button>
