@@ -103,6 +103,8 @@ export function useTransactions() {
 
         const data: PaginatedResponse<Transaction> = await response.json();
 
+        setHasMore(data.pagination.hasMore);
+
         setTransactions(prev => {
           if (shouldAppend) {
             const existingHashes = new Set(prev.map(t => t.hash));
